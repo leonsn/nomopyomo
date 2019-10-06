@@ -1,4 +1,3 @@
-
 ## Copyright 2019 Tom Brown (KIT)
 
 ## This program is free software; you can redistribute it and/or
@@ -17,22 +16,15 @@
 """nomopyomo: build optimisation problems from PyPSA networks without
 Pyomo. nomopyomo = no more Pyomo."""
 
-
-
 from pypsa.descriptors import get_switchable_as_dense, allocate_series_dataframes
 from pypsa.pf import (calculate_dependent_values, find_slack_bus,
                  find_bus_controls, calculate_B_H, find_cycles, _as_snapshots)
-
 import pandas as pd
 import numpy as np
 import datetime as dt
-
 import os, gc, string, random, subprocess, pyomo
-
 import logging
 logger = logging.getLogger(__name__)
-
-
 now = dt.datetime.now()
 
 def write_objective(network,coeff,position):
@@ -59,7 +51,6 @@ def add_group(network,sort,group,length):
     setattr(network,sort+ "_positions",df.astype(int))
 
 def extendable_attribute_constraints(network,snapshots,component,attr,marginal_cost=True):
-
     df = getattr(network,network.components[component]["list_name"])
     pnl = getattr(network,network.components[component]["list_name"]+"_t")
 
@@ -151,19 +142,15 @@ def extendable_attribute_constraints(network,snapshots,component,attr,marginal_c
             write_constraint(network,{j+k : 1., j_nom : -upper[k]},"<=","0",i+k)
 
 def define_generator_constraints(network,snapshots):
-
     if network.generators.committable.any():
         logger.warning("Committable generators are currently not supported")
 
     extendable_attribute_constraints(network,snapshots,"Generator","p")
 
 def define_link_constraints(network,snapshots):
-
     extendable_attribute_constraints(network,snapshots,"Link","p")
 
-
 def define_passive_branch_constraints(network,snapshots):
-
     passive_branches = network.passive_branches()
 
     if len(passive_branches) == 0:
@@ -215,8 +202,6 @@ def define_passive_branch_constraints(network,snapshots):
             write_constraint(network,constraint_matrix[i+k],"==","0",start+i+k)
 
 def define_store_constraints(network,snapshots):
-
-
     group = "Store-p"
     add_group(network,"variable",group,len(network.stores.index)*len(snapshots))
 
@@ -267,9 +252,7 @@ def define_store_constraints(network,snapshots):
             write_constraint(network,constraint_matrix_row,"==",rhs,i+k)
 
 def define_nodal_balance_constraints(network,snapshots):
-
     constraint_matrix = {}
-
 
     for i_bus,bus in enumerate(network.buses.index):
         i = i_bus*len(snapshots)
@@ -320,7 +303,6 @@ def define_nodal_balance_constraints(network,snapshots):
                 constraint_matrix[i0+k][j+k] = -1.
                 constraint_matrix[i1+k][j+k] = 1.
 
-
     group = "nodal_balance"
     add_group(network,"constraint",group,len(network.buses.index)*len(snapshots))
     start = network.constraint_positions.at[group,"start"]
@@ -332,9 +314,7 @@ def define_nodal_balance_constraints(network,snapshots):
         for k in range(len(snapshots)):
             write_constraint(network,constraint_matrix[i+k],"==",rhs_i[k],start+i+k)
 
-
 def define_global_constraints(network,snapshots):
-
     gcs = network.global_constraints.index
     if len(gcs) == 0:
         return
@@ -374,7 +354,6 @@ def define_global_constraints(network,snapshots):
 
             write_constraint(network,constraint_matrix_row,network.global_constraints.loc[gc,"sense"],rhs,start+i)
 
-
 def run_cbc(filename,sol_filename,solver_logfile,solver_options,keep_files):
     options = "" #-dualsimplex -primalsimplex
     #printingOptions is about what goes in solution file
@@ -390,7 +369,6 @@ def run_cbc(filename,sol_filename,solver_logfile,solver_options,keep_files):
        os.system("rm "+ filename)
 
 def run_gurobi(network,filename,sol_filename,solver_logfile,solver_options,keep_files):
-
     solver_options["logfile"] = solver_logfile
 
     script_fn = "/tmp/gurobi-{}.script".format(network.identifier)
@@ -451,7 +429,6 @@ def read_cbc(network,sol_filename,keep_files):
 
     return status,termination_condition,variables_sol,constraints_dual
 
-
 def read_gurobi(network,sol_filename,keep_files):
     f = open(sol_filename,"r")
     for i in range(23):
@@ -459,7 +436,6 @@ def read_gurobi(network,sol_filename,keep_files):
         logger.info(data)
     f.close()
     sol = pd.read_csv(sol_filename,header=None,skiprows=23,sep=":")
-
 
     variables = sol.index[sol[1].str[:2] == " x"]
     variables_sol = sol.loc[variables,2].astype(float)
@@ -477,10 +453,7 @@ def read_gurobi(network,sol_filename,keep_files):
 
     return status,termination_condition,variables_sol,constraints_dual
 
-
-
 def assign_solution(network,snapshots,variables_sol,constraints_dual,extra_postprocessing):
-
     allocate_series_dataframes(network, {'Generator': ['p'],
                                          'Load': ['p'],
                                          'StorageUnit': ['p', 'state_of_charge', 'spill'],
@@ -554,9 +527,7 @@ def assign_solution(network,snapshots,variables_sol,constraints_dual,extra_postp
     if extra_postprocessing is not None:
         extra_postprocessing(network,snapshots,variables_sol)
 
-
 def prepare_lopf_problem(network,snapshots,problem_file,keep_files,extra_functionality):
-
    network.variable_positions = pd.DataFrame(columns=["start","finish"])
    network.constraint_positions = pd.DataFrame(columns=["start","finish"])
 
@@ -599,7 +570,6 @@ def prepare_lopf_problem(network,snapshots,problem_file,keep_files,extra_functio
    if not keep_files:
        for fn in [objective_fn,constraints_fn,bounds_fn]:
            os.system("rm "+ fn)
-
 
 def network_lopf(network, snapshots=None, solver_name="cbc",solver_logfile=None,skip_pre=False,
                  extra_functionality=None,extra_postprocessing=None,
@@ -644,7 +614,7 @@ def network_lopf(network, snapshots=None, solver_name="cbc",solver_logfile=None,
 
     Returns
     -------
-    None
+    status, termination_condition
     """
 
     supported_solvers = ["cbc","gurobi"]
