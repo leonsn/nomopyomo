@@ -23,6 +23,7 @@ import pandas as pd
 import numpy as np
 import datetime as dt
 import os, gc, string, random, subprocess, pyomo
+import tempfile, shutil
 import logging
 logger = logging.getLogger(__name__)
 now = dt.datetime.now()
@@ -368,10 +369,9 @@ def run_cbc(filename,sol_filename,solver_logfile,solver_options,keep_files):
     if not keep_files:
        os.system("rm "+ filename)
 
-def run_gurobi(network,filename,sol_filename,solver_logfile,solver_options,keep_files):
+def run_gurobi(network,directory_name,filename,sol_filename,solver_logfile,solver_options,keep_files):
     solver_options["logfile"] = solver_logfile
-
-    script_fn = "/tmp/gurobi-{}.script".format(network.identifier)
+    script_fn = os.path.join(directory_name, "gurobi-{}.script".format(network.identifier))
     script_f = open(script_fn,"w")
     script_f.write('import sys\n')
     script_f.write('from gurobipy import *\n')
@@ -379,11 +379,20 @@ def run_gurobi(network,filename,sol_filename,solver_logfile,solver_options,keep_
     #script_f.write('sys.path.append("{}")\n'.format(os.path.dirname(__file__)))
     script_f.write('from GUROBI_RUN import *\n')
     #2nd argument is warmstart
-    script_f.write('gurobi_run("{}",{},"{}",None,{},["dual"],)\n'.format(filename,None,sol_filename,solver_options))
+    if os.name == 'nt': # On Windows:
+        script_f.write('gurobi_run("{}",{},"{}",None,{},["dual"],)\n'.format(filename.encode('unicode-escape').decode(),
+                                                                             None,
+                                                                             sol_filename.encode('unicode-escape').decode(),
+                                                                             solver_options))
+    else: # On Linux:
+        script_f.write('gurobi_run("{}",{},"{}",None,{},["dual"],)\n'.format(filename,None,sol_filename,solver_options))
     script_f.write('quit()\n')
     script_f.close()
 
-    command = "gurobi.sh {}".format(script_fn)
+    if os.name == 'nt': # On Windows:
+        command = "gurobi.bat {}".format(script_fn)
+    else: # On Linux:
+        command = "gurobi.sh {}".format(script_fn)
 
     logger.info("Running command:")
     logger.info(command)
@@ -527,19 +536,19 @@ def assign_solution(network,snapshots,variables_sol,constraints_dual,extra_postp
     if extra_postprocessing is not None:
         extra_postprocessing(network,snapshots,variables_sol)
 
-def prepare_lopf_problem(network,snapshots,problem_file,keep_files,extra_functionality):
+def prepare_lopf_problem(network,snapshots,directory_name,problem_file,keep_files,extra_functionality):
    network.variable_positions = pd.DataFrame(columns=["start","finish"])
    network.constraint_positions = pd.DataFrame(columns=["start","finish"])
 
-   objective_fn = "/tmp/objective-{}.txt".format(network.identifier)
+   objective_fn = os.path.join(directory_name, "objective-{}.txt".format(network.identifier))
    network.objective_f = open(objective_fn,"w")
    network.objective_f.write('\\* LOPF \*\\n\nmin\nobj:\n')
 
-   constraints_fn = "/tmp/constraints-{}.txt".format(network.identifier)
+   constraints_fn = os.path.join(directory_name, "constraints-{}.txt".format(network.identifier))
    network.constraints_f = open(constraints_fn,"w")
    network.constraints_f.write("\n\ns.t.\n\n")
 
-   bounds_fn = "/tmp/bounds-{}.txt".format(network.identifier)
+   bounds_fn = os.path.join(directory_name, "bounds-{}.txt".format(network.identifier))
    network.bounds_f = open(bounds_fn,"w")
    network.bounds_f.write("\nbounds\n")
 
@@ -571,10 +580,9 @@ def prepare_lopf_problem(network,snapshots,problem_file,keep_files,extra_functio
        for fn in [objective_fn,constraints_fn,bounds_fn]:
            os.system("rm "+ fn)
 
-def network_lopf(network, snapshots=None, solver_name="cbc",solver_logfile=None,skip_pre=False,
-                 extra_functionality=None,extra_postprocessing=None,
-                 formulation="kirchhoff",
-                 solver_options={},keep_files=False):
+def network_lopf(network, snapshots=None, solver_name="cbc", solver_logfile=None, 
+                 skip_pre=False, extra_functionality=None, extra_postprocessing=None,
+                 formulation="kirchhoff", solver_options={}, keep_files=False):
     """
     Linear optimal power flow for a group of snapshots.
 
@@ -633,14 +641,19 @@ def network_lopf(network, snapshots=None, solver_name="cbc",solver_logfile=None,
 
     snapshots = _as_snapshots(network, snapshots)
 
+    # Create a temporary directory using the context manager, n.b. directory and contents will be removed automatically
+    # alternatively set directory_name = '/tmp' for linux only
+    temp_dir = tempfile.TemporaryDirectory()
+    directory_name = temp_dir.name
+    
     network.identifier = ''.join(random.choice(string.ascii_lowercase) for i in range(8))
-    problem_file = "/tmp/test-{}.lp".format(network.identifier)
-    solution_file = "/tmp/test-{}.sol".format(network.identifier)
+    problem_file = os.path.join(directory_name, "test-{}.lp".format(network.identifier))
+    solution_file = os.path.join(directory_name, "test-{}.sol".format(network.identifier))
     if solver_logfile is None:
-        solver_logfile = "/tmp/test-{}.log".format(network.identifier)
+        solver_logfile = os.path.join(directory_name, "test-{}.log".format(network.identifier))
 
     logger.info("before prep %s",dt.datetime.now()-now)
-    prepare_lopf_problem(network,snapshots,problem_file,keep_files,extra_functionality)
+    prepare_lopf_problem(network,snapshots,directory_name,problem_file,keep_files,extra_functionality)
     gc.collect()
 
     logger.info("before run %s",dt.datetime.now()-now)
@@ -650,11 +663,13 @@ def network_lopf(network, snapshots=None, solver_name="cbc",solver_logfile=None,
         logger.info("before read %s",dt.datetime.now()-now)
         status,termination_condition,variables_sol,constraints_dual = read_cbc(network,solution_file,keep_files)
     elif solver_name == "gurobi":
-        run_gurobi(network,problem_file,solution_file,solver_logfile,solver_options,keep_files)
+        run_gurobi(network,directory_name,problem_file,solution_file,solver_logfile,solver_options,keep_files)
         logger.info("before read %s",dt.datetime.now()-now)
         status,termination_condition,variables_sol,constraints_dual = read_gurobi(network,solution_file,keep_files)
 
     if termination_condition != "optimal":
+        if not keep_files:
+            shutil.rmtree(directory_name)
         return status,termination_condition
 
     gc.collect()
@@ -663,4 +678,6 @@ def network_lopf(network, snapshots=None, solver_name="cbc",solver_logfile=None,
     logger.info("end %s",dt.datetime.now()-now)
     gc.collect()
 
+    if not keep_files:
+        shutil.rmtree(directory_name)
     return status,termination_condition
