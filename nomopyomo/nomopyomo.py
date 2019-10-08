@@ -440,12 +440,19 @@ def read_cbc(network,sol_filename,keep_files):
 
 def read_gurobi(network,sol_filename,keep_files):
     f = open(sol_filename,"r")
+    status = None
     for i in range(23):
         data = f.readline()
-        logger.info(data)
+        #logger.info(data)
+        if status is None and data[:len("status: ")] == "status: ":
+            status = data[len("status: "):-1]
+        elif data[:len("termination_condition: ")] == "termination_condition: ":
+            termination_condition = data[len("termination_condition: "):-1]
+        elif data[:len("objective: ")] == "objective: ":
+            network.objective = float(data[len("objective: "):])
     f.close()
     sol = pd.read_csv(sol_filename,header=None,skiprows=23,sep=":")
-
+    
     variables = sol.index[sol[1].str[:2] == " x"]
     variables_sol = sol.loc[variables,2].astype(float)
     variables_sol.index = sol.loc[variables,1].str[2:].astype(int)
@@ -456,9 +463,6 @@ def read_gurobi(network,sol_filename,keep_files):
 
     if not keep_files:
        os.system("rm "+ sol_filename)
-
-    status = "ok"
-    termination_condition = "optimal"
 
     return status,termination_condition,variables_sol,constraints_dual
 
