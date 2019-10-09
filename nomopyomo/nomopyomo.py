@@ -23,7 +23,7 @@ import pandas as pd
 import numpy as np
 import datetime as dt
 import os, gc, string, random, subprocess, pyomo
-import tempfile, shutil
+import tempfile
 import logging
 logger = logging.getLogger(__name__)
 now = dt.datetime.now()
