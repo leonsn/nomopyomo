@@ -672,8 +672,6 @@ def network_lopf(network, snapshots=None, solver_name="cbc", solver_logfile=None
         status,termination_condition,variables_sol,constraints_dual = read_gurobi(network,solution_file,keep_files)
 
     if termination_condition != "optimal":
-        if not keep_files:
-            shutil.rmtree(directory_name)
         return status,termination_condition
 
     gc.collect()
@@ -682,6 +680,4 @@ def network_lopf(network, snapshots=None, solver_name="cbc", solver_logfile=None
     logger.info("end %s",dt.datetime.now()-now)
     gc.collect()
 
-    if not keep_files:
-        shutil.rmtree(directory_name)
     return status,termination_condition
